@@ -10,7 +10,9 @@ use App\RabbitMq\AmqpMessageTransport;
 use App\RabbitMq\DeliveryPublisher;
 use App\RabbitMq\EventPublisher;
 use App\RabbitMq\RabbitMqConfig;
+use App\Services\DefaultRetryPolicy;
 use App\Services\DeliveryService;
+use App\Services\RetryPolicy;
 use App\Services\WebhookDeliveryService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
@@ -46,8 +48,18 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-        $this->app->singleton(WebhookDeliveryService::class, function (): WebhookDeliveryService {
-            return new WebhookDeliveryService;
+        $this->app->singleton(RetryPolicy::class, function (): RetryPolicy {
+            return new DefaultRetryPolicy(
+                maxAttempts: 5,
+                initialDelayMs: 1000,
+                maxDelayMs: 30000,
+            );
+        });
+
+        $this->app->singleton(WebhookDeliveryService::class, function ($app): WebhookDeliveryService {
+            return new WebhookDeliveryService(
+                retryPolicy: $app->make(RetryPolicy::class),
+            );
         });
     }
 
@@ -73,13 +85,13 @@ class AppServiceProvider extends ServiceProvider
         );
 
         Password::defaults(
-            fn (): ?Password => app()->isProduction()
+            fn(): ?Password => app()->isProduction()
                 ? Password::min(12)
-                    ->mixedCase()
-                    ->letters()
-                    ->numbers()
-                    ->symbols()
-                    ->uncompromised()
+                ->mixedCase()
+                ->letters()
+                ->numbers()
+                ->symbols()
+                ->uncompromised()
                 : null,
         );
     }

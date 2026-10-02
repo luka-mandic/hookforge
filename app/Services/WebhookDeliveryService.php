@@ -10,6 +10,7 @@ class WebhookDeliveryService
 {
     public function __construct(
         protected ?WebhookRequestBuilder $requestBuilder = null,
+        protected RetryPolicy $retryPolicy = new DefaultRetryPolicy(maxAttempts: 1),
     ) {
         $this->requestBuilder ??= new WebhookRequestBuilder(new WebhookSigner);
     }
@@ -63,7 +64,7 @@ class WebhookDeliveryService
             $result = $statusCode >= 200 && $statusCode < 300
                 ? DeliveryResult::success($statusCode, $response->body(), $durationMs)
                 : DeliveryResult::failed(
-                    'HTTP status '.$statusCode,
+                    'HTTP status ' . $statusCode,
                     $statusCode,
                     $response->body(),
                     $durationMs,
@@ -97,11 +98,36 @@ class WebhookDeliveryService
             'completed_at' => now(),
         ]);
 
+        if ($result->isSuccessful()) {
+            $delivery->update([
+                'status' => 'delivered',
+                'response_status' => $result->statusCode,
+                'last_error' => null,
+                'delivered_at' => now(),
+                'next_attempt_at' => null,
+            ]);
+
+            return;
+        }
+
+        if ($this->retryPolicy->shouldRetry($result, $delivery->attempt_count)) {
+            $delivery->update([
+                'status' => 'queued',
+                'response_status' => $result->statusCode,
+                'last_error' => $result->errorMessage,
+                'next_attempt_at' => now()->addMilliseconds($this->retryPolicy->delayForAttempt($delivery->attempt_count)),
+                'delivered_at' => null,
+            ]);
+
+            return;
+        }
+
         $delivery->update([
-            'status' => $result->isSuccessful() ? 'delivered' : 'failed',
+            'status' => 'failed',
             'response_status' => $result->statusCode,
             'last_error' => $result->errorMessage,
-            'delivered_at' => $result->isSuccessful() ? now() : null,
+            'delivered_at' => null,
+            'next_attempt_at' => null,
         ]);
     }
 }
