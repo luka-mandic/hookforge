@@ -23,6 +23,7 @@ class WebhookEvent extends Model
         'event_type',
         'payload',
         'status',
+        'idempotency_key',
     ];
 
     protected function casts(): array
