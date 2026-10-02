@@ -1,0 +1,15 @@
+/.git
+/node_modules
+/vendor
+/storage/*.key
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*
+.env
+.env.*
+.gitignore
+.gitmodules
+.DS_Store
+.idea
+.vscode

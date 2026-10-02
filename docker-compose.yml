@@ -1,0 +1,80 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: hookforge-nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - php-fpm
+    networks:
+      - hookforge
+
+  php-fpm:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: hookforge-php
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    networks:
+      - hookforge
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: hookforge-postgres
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-hookforge}
+      POSTGRES_USER: ${DB_USERNAME:-hookforge}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-hookforge}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USERNAME:-hookforge} -d ${DB_DATABASE:-hookforge}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - hookforge
+
+  redis:
+    image: redis:7-alpine
+    container_name: hookforge-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - hookforge
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: hookforge-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - hookforge
+
+volumes:
+  postgres_data:
+
+networks:
+  hookforge:
+    driver: bridge
