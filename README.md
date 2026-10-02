@@ -60,6 +60,26 @@ docker compose down
 - RabbitMQ user: guest
 - RabbitMQ password: guest
 
-## Notes
+## RabbitMQ topology
 
-This phase establishes the project foundation and local infrastructure only. Business functionality and webhook delivery logic will be added in later roadmap phases.
+Hookforge publishes webhook events to RabbitMQ using a topic exchange and explicit routing keys.
+
+- Exchange: `hookforge.events`
+- Default queue: `hookforge.delivery`
+- Routing key pattern: `hookforge.delivery.<event_type>`
+
+Example payload:
+
+```json
+{
+    "project_id": "01J...",
+    "event_id": "01J...",
+    "event_type": "order.created",
+    "payload": {
+        "order_id": "ord_123",
+        "amount": 1299
+    }
+}
+```
+
+The AMQP configuration is driven by environment variables in `.env`, and publishing is deferred until the related database transaction is committed.

@@ -6,6 +6,9 @@ use App\Models\Project;
 use App\Models\WebhookEndpoint;
 use App\Policies\ProjectPolicy;
 use App\Policies\WebhookEndpointPolicy;
+use App\RabbitMq\AmqpMessageTransport;
+use App\RabbitMq\EventPublisher;
+use App\RabbitMq\RabbitMqConfig;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +23,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(EventPublisher::class, function (): EventPublisher {
+            return new EventPublisher(
+                RabbitMqConfig::fromEnvironment(),
+                new AmqpMessageTransport,
+            );
+        });
     }
 
     /**
@@ -45,13 +53,13 @@ class AppServiceProvider extends ServiceProvider
         );
 
         Password::defaults(
-            fn (): ?Password => app()->isProduction()
+            fn(): ?Password => app()->isProduction()
                 ? Password::min(12)
-                    ->mixedCase()
-                    ->letters()
-                    ->numbers()
-                    ->symbols()
-                    ->uncompromised()
+                ->mixedCase()
+                ->letters()
+                ->numbers()
+                ->symbols()
+                ->uncompromised()
                 : null,
         );
     }

@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Project;
 use App\Models\WebhookEvent;
+use App\RabbitMq\EventPublisher;
+use Illuminate\Support\Facades\DB;
 
 class WebhookEventService
 {
@@ -32,6 +34,19 @@ class WebhookEventService
             'status' => 'queued',
             'idempotency_key' => $idempotencyKey,
         ]);
+
+        if (app()->bound(EventPublisher::class)) {
+            DB::afterCommit(function () use ($event) {
+                try {
+                    app(EventPublisher::class)->publish($event);
+                } catch (\Throwable $exception) {
+                    logger()->warning('Webhook event publication failed.', [
+                        'event_id' => $event->getKey(),
+                        'exception' => $exception->getMessage(),
+                    ]);
+                }
+            });
+        }
 
         return [
             'event' => $event,
