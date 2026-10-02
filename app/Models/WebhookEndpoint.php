@@ -54,4 +54,9 @@ class WebhookEndpoint extends Model
     {
         return $this->hasMany(WebhookDelivery::class, 'endpoint_id');
     }
+
+    public function isEnabled(): bool
+    {
+        return $this->status === 'active';
+    }
 }
