@@ -27,7 +27,7 @@ class DeliveryService
     public function createForEvent(WebhookEvent $event): Collection
     {
         $deliveries = $this->matchingEndpoints($event)
-            ->map(fn(WebhookEndpoint $endpoint) => $this->createDelivery($event, $endpoint))
+            ->map(fn (WebhookEndpoint $endpoint) => $this->createDelivery($event, $endpoint))
             ->values();
 
         $this->publishDeliveries($deliveries);
@@ -46,8 +46,8 @@ class DeliveryService
             ->where('status', 'active')
             ->with('endpoint')
             ->get()
-            ->map(fn($subscription) => $subscription->endpoint)
-            ->filter(fn(?WebhookEndpoint $endpoint) => $endpoint !== null && $endpoint->isEnabled())
+            ->map(fn ($subscription) => $subscription->endpoint)
+            ->filter(fn (?WebhookEndpoint $endpoint) => $endpoint !== null && $endpoint->isEnabled())
             ->unique('id')
             ->values();
     }

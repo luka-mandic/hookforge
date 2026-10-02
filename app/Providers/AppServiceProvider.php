@@ -11,6 +11,7 @@ use App\RabbitMq\DeliveryPublisher;
 use App\RabbitMq\EventPublisher;
 use App\RabbitMq\RabbitMqConfig;
 use App\Services\DeliveryService;
+use App\Services\WebhookDeliveryService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +45,10 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(DeliveryPublisher::class),
             );
         });
+
+        $this->app->singleton(WebhookDeliveryService::class, function (): WebhookDeliveryService {
+            return new WebhookDeliveryService;
+        });
     }
 
     /**
@@ -68,13 +73,13 @@ class AppServiceProvider extends ServiceProvider
         );
 
         Password::defaults(
-            fn(): ?Password => app()->isProduction()
+            fn (): ?Password => app()->isProduction()
                 ? Password::min(12)
-                ->mixedCase()
-                ->letters()
-                ->numbers()
-                ->symbols()
-                ->uncompromised()
+                    ->mixedCase()
+                    ->letters()
+                    ->numbers()
+                    ->symbols()
+                    ->uncompromised()
                 : null,
         );
     }
