@@ -17,38 +17,43 @@ class WebhookDeliveryService
 
     public function process(WebhookDelivery $delivery): DeliveryResult
     {
-        $lockedDelivery = DB::transaction(function () use ($delivery): ?WebhookDelivery {
+        $claim = DB::transaction(function () use ($delivery): array {
             $current = WebhookDelivery::query()
                 ->whereKey($delivery->getKey())
                 ->lockForUpdate()
                 ->first();
 
             if (! $current instanceof WebhookDelivery) {
-                return null;
+                return ['state' => 'missing'];
             }
 
             if (in_array($current->status, ['processing', 'delivered'], true)) {
-                return $current;
+                return ['state' => 'duplicate'];
             }
 
             $current->update([
                 'status' => 'processing',
                 'sent_at' => now(),
+                'next_attempt_at' => null,
             ]);
 
-            return $current->fresh();
+            return ['state' => 'claimed', 'delivery' => $current->fresh()];
         });
 
-        if (! $lockedDelivery instanceof WebhookDelivery) {
+        $claimState = $claim['state'];
+
+        if ($claimState === 'missing') {
             return DeliveryResult::failed('Delivery could not be found.');
         }
 
-        if ($lockedDelivery->status === 'delivered' && $lockedDelivery->attempt_count > 0) {
-            return DeliveryResult::failed('Delivery has already been processed.');
+        if ($claimState === 'duplicate') {
+            return DeliveryResult::failed('Delivery is already being processed or has already been delivered.');
         }
 
-        if ($lockedDelivery->status === 'processing' && $lockedDelivery->attempt_count > 0) {
-            return DeliveryResult::failed('Delivery is already being processed.');
+        $lockedDelivery = $claim['delivery'] ?? null;
+
+        if (! $lockedDelivery instanceof WebhookDelivery) {
+            return DeliveryResult::failed('Delivery claim could not be established.');
         }
 
         $request = $this->requestBuilder->build($lockedDelivery);

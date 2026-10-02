@@ -24,7 +24,7 @@ test('webhook signer generates the expected hmac signature', function () {
 
     $signature = (new WebhookSigner)->sign($payload, 'super-secret');
 
-    expect($signature)->toBe('sha256='.hash_hmac('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'super-secret'));
+    expect($signature)->toBe('sha256=' . hash_hmac('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'super-secret'));
 });
 
 test('webhook request builder adds the expected metadata', function () {
@@ -169,6 +169,36 @@ test('delivery consumer processes a message payload by delivery id', function ()
 
     expect($result)->toBeInstanceOf(DeliveryResult::class)
         ->and($result->isSuccessful())->toBeTrue()
+        ->and($delivery->fresh()->status)->toBe('delivered')
+        ->and($delivery->fresh()->attempt_count)->toBe(1);
+});
+
+test('delivery processing prevents duplicate claims and reprocessing', function () {
+    $project = Project::factory()->for($this->user)->create();
+    $endpoint = WebhookEndpoint::factory()->for($project)->create([
+        'url' => 'https://example.com/webhook',
+        'secret' => 'super-secret',
+        'status' => 'active',
+    ]);
+    $event = WebhookEvent::factory()->for($project)->create([
+        'event_type' => 'invoice.paid',
+        'payload' => ['id' => 'evt_123', 'amount' => 50],
+    ]);
+    $delivery = WebhookDelivery::factory()->for($project)->for($endpoint)->for($event, 'event')->create([
+        'status' => 'queued',
+        'attempt_count' => 0,
+    ]);
+
+    Http::fake([
+        'https://example.com/webhook' => Http::response(['ok' => true], 200),
+    ]);
+
+    $first = (new WebhookDeliveryService)->process($delivery);
+    $second = (new WebhookDeliveryService)->process($delivery->fresh());
+
+    expect($first->isSuccessful())->toBeTrue()
+        ->and($second->isSuccessful())->toBeFalse()
+        ->and($second->errorMessage)->toContain('already')
         ->and($delivery->fresh()->status)->toBe('delivered')
         ->and($delivery->fresh()->attempt_count)->toBe(1);
 });
