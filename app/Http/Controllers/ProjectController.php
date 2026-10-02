@@ -13,6 +13,7 @@ use Illuminate\View\View;
 class ProjectController extends Controller
 {
     use AuthorizesRequests;
+
     public function index(): View
     {
         $projects = auth()->user()->projects()->latest()->get();

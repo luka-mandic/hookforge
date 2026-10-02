@@ -17,7 +17,7 @@ class WebhookEndpointFactory extends Factory
     {
         return [
             'project_id' => Project::factory(),
-            'name' => fake()->company() . ' Webhook',
+            'name' => fake()->company().' Webhook',
             'url' => fake()->url(),
             'secret' => sha1((string) fake()->uuid()),
             'description' => fake()->sentence(),

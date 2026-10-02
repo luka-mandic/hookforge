@@ -13,6 +13,7 @@ use Illuminate\Http\RedirectResponse;
 class WebhookEndpointController extends Controller
 {
     use AuthorizesRequests;
+
     public function store(Project $project, StoreWebhookEndpointRequest $request, WebhookEndpointService $service): RedirectResponse
     {
         $this->authorize('create', [WebhookEndpoint::class, $project]);

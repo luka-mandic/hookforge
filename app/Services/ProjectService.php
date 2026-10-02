@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 class ProjectService
 {
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     public function create(User $user, array $attributes): Project
     {
@@ -30,7 +30,7 @@ class ProjectService
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     public function update(Project $project, array $attributes): Project
     {
@@ -64,7 +64,7 @@ class ProjectService
         $slug = $base;
         $counter = 1;
 
-        while ($user->projects()->where('slug', $slug)->when($ignoreProjectId, fn($query) => $query->whereKeyNot($ignoreProjectId))->exists()) {
+        while ($user->projects()->where('slug', $slug)->when($ignoreProjectId, fn ($query) => $query->whereKeyNot($ignoreProjectId))->exists()) {
             $slug = sprintf('%s-%d', $base, $counter);
             $counter++;
         }

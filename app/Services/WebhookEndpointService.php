@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 class WebhookEndpointService
 {
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     public function create(Project $project, array $attributes): WebhookEndpoint
     {
@@ -31,7 +31,7 @@ class WebhookEndpointService
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     public function update(WebhookEndpoint $endpoint, array $attributes): WebhookEndpoint
     {
