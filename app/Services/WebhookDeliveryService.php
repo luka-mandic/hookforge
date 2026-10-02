@@ -10,7 +10,7 @@ class WebhookDeliveryService
 {
     public function __construct(
         protected ?WebhookRequestBuilder $requestBuilder = null,
-        protected RetryPolicy $retryPolicy = new DefaultRetryPolicy(maxAttempts: 1),
+        protected RetryPolicy $retryPolicy = new DefaultRetryPolicy,
     ) {
         $this->requestBuilder ??= new WebhookRequestBuilder(new WebhookSigner);
     }
@@ -27,7 +27,7 @@ class WebhookDeliveryService
                 return ['state' => 'missing'];
             }
 
-            if (in_array($current->status, ['processing', 'delivered'], true)) {
+            if (in_array($current->status, ['processing', 'delivered', 'dead_lettered'], true)) {
                 return ['state' => 'duplicate'];
             }
 
@@ -88,6 +88,19 @@ class WebhookDeliveryService
         }
     }
 
+    public function retry(WebhookDelivery $delivery): WebhookDelivery
+    {
+        $delivery->update([
+            'status' => 'queued',
+            'response_status' => null,
+            'last_error' => null,
+            'next_attempt_at' => now(),
+            'delivered_at' => null,
+        ]);
+
+        return $delivery->fresh();
+    }
+
     protected function persistResult(WebhookDelivery $delivery, DeliveryResult $result): void
     {
         $delivery->increment('attempt_count');
@@ -127,8 +140,10 @@ class WebhookDeliveryService
             return;
         }
 
+        $status = $delivery->attempt_count >= $this->retryPolicy->maxAttempts() ? 'dead_lettered' : 'failed';
+
         $delivery->update([
-            'status' => 'failed',
+            'status' => $status,
             'response_status' => $result->statusCode,
             'last_error' => $result->errorMessage,
             'delivered_at' => null,

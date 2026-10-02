@@ -6,6 +6,10 @@ use App\Models\WebhookDelivery;
 use App\Models\WebhookEndpoint;
 use App\Models\WebhookEvent;
 use App\RabbitMq\DeliveryConsumer;
+use App\RabbitMq\MessageTransport;
+use App\RabbitMq\RabbitMqConfig;
+use App\RabbitMq\WebhookMessage;
+use App\Services\DefaultRetryPolicy;
 use App\Services\DeliveryResult;
 use App\Services\WebhookDeliveryService;
 use App\Services\WebhookRequestBuilder;
@@ -139,8 +143,9 @@ test('delivery service handles network failures without crashing', function () {
     $result = (new WebhookDeliveryService)->process($delivery);
 
     expect($result->isSuccessful())->toBeFalse()
-        ->and($delivery->fresh()->status)->toBe('failed')
+        ->and($delivery->fresh()->status)->toBe('queued')
         ->and($delivery->fresh()->last_error)->toBeString()
+        ->and($delivery->fresh()->next_attempt_at)->not->toBeNull()
         ->and($delivery->attempts()->count())->toBe(1);
 });
 
@@ -201,4 +206,80 @@ test('delivery processing prevents duplicate claims and reprocessing', function 
         ->and($second->errorMessage)->toContain('already')
         ->and($delivery->fresh()->status)->toBe('delivered')
         ->and($delivery->fresh()->attempt_count)->toBe(1);
+});
+
+test('delivery is dead-lettered after the retry budget is exhausted', function () {
+    $project = Project::factory()->for($this->user)->create();
+    $endpoint = WebhookEndpoint::factory()->for($project)->create([
+        'url' => 'https://example.com/webhook',
+        'secret' => 'super-secret',
+        'status' => 'active',
+    ]);
+    $event = WebhookEvent::factory()->for($project)->create([
+        'event_type' => 'invoice.paid',
+        'payload' => ['id' => 'evt_123', 'amount' => 50],
+    ]);
+    $delivery = WebhookDelivery::factory()->for($project)->for($endpoint)->for($event, 'event')->create([
+        'status' => 'queued',
+        'attempt_count' => 0,
+    ]);
+
+    $policy = new DefaultRetryPolicy(maxAttempts: 2, initialDelayMs: 1000, maxDelayMs: 1000);
+    $service = new WebhookDeliveryService(retryPolicy: $policy);
+
+    Http::fake([
+        'https://example.com/webhook' => Http::response(['error' => 'server error'], 500),
+    ]);
+
+    $service->process($delivery);
+    $delivery->refresh();
+
+    expect($delivery->status)->toBe('queued')
+        ->and($delivery->next_attempt_at)->not->toBeNull();
+
+    Http::swap(new class implements MessageTransport
+    {
+        public function publish(WebhookMessage $message, RabbitMqConfig $config): void
+        {
+            // noop
+        }
+    });
+
+    $service->process($delivery->fresh());
+    $delivery->refresh();
+
+    expect($delivery->status)->toBe('dead_lettered')
+        ->and($delivery->attempt_count)->toBe(2)
+        ->and($delivery->next_attempt_at)->toBeNull()
+        ->and($delivery->attempts()->count())->toBe(2);
+});
+
+test('manual retry requeues a dead-lettered delivery without losing history', function () {
+    $project = Project::factory()->for($this->user)->create();
+    $endpoint = WebhookEndpoint::factory()->for($project)->create([
+        'url' => 'https://example.com/webhook',
+        'secret' => 'super-secret',
+        'status' => 'active',
+    ]);
+    $event = WebhookEvent::factory()->for($project)->create([
+        'event_type' => 'invoice.paid',
+        'payload' => ['id' => 'evt_123', 'amount' => 50],
+    ]);
+    $delivery = WebhookDelivery::factory()->for($project)->for($endpoint)->for($event, 'event')->create([
+        'status' => 'dead_lettered',
+        'attempt_count' => 2,
+        'response_status' => 500,
+        'last_error' => 'server error',
+    ]);
+
+    $service = new WebhookDeliveryService(
+        retryPolicy: new DefaultRetryPolicy(maxAttempts: 3, initialDelayMs: 1000, maxDelayMs: 1000),
+    );
+
+    $service->retry($delivery);
+
+    expect($delivery->fresh()->status)->toBe('queued')
+        ->and($delivery->fresh()->next_attempt_at)->not->toBeNull()
+        ->and($delivery->fresh()->last_error)->toBeNull()
+        ->and($delivery->attempts()->count())->toBe(0);
 });

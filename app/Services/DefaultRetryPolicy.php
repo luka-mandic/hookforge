@@ -30,6 +30,11 @@ final class DefaultRetryPolicy implements RetryPolicy
         $this->multiplier = max(2, $multiplier);
     }
 
+    public function maxAttempts(): int
+    {
+        return $this->maxAttempts;
+    }
+
     public function shouldRetry(DeliveryResult $result, int $attemptNumber): bool
     {
         if ($attemptNumber >= $this->maxAttempts) {
