@@ -7,8 +7,10 @@ use App\Models\WebhookEndpoint;
 use App\Policies\ProjectPolicy;
 use App\Policies\WebhookEndpointPolicy;
 use App\RabbitMq\AmqpMessageTransport;
+use App\RabbitMq\DeliveryPublisher;
 use App\RabbitMq\EventPublisher;
 use App\RabbitMq\RabbitMqConfig;
+use App\Services\DeliveryService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +29,19 @@ class AppServiceProvider extends ServiceProvider
             return new EventPublisher(
                 RabbitMqConfig::fromEnvironment(),
                 new AmqpMessageTransport,
+            );
+        });
+
+        $this->app->singleton(DeliveryPublisher::class, function (): DeliveryPublisher {
+            return new DeliveryPublisher(
+                RabbitMqConfig::fromEnvironment(),
+                new AmqpMessageTransport,
+            );
+        });
+
+        $this->app->bind(DeliveryService::class, function ($app): DeliveryService {
+            return new DeliveryService(
+                $app->make(DeliveryPublisher::class),
             );
         });
     }

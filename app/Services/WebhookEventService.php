@@ -48,6 +48,30 @@ class WebhookEventService
             });
         }
 
+        if (app()->bound(DeliveryService::class)) {
+            if (DB::transactionLevel() > 0) {
+                DB::afterCommit(function () use ($event) {
+                    try {
+                        app(DeliveryService::class)->createForEvent($event);
+                    } catch (\Throwable $exception) {
+                        logger()->warning('Webhook delivery creation failed.', [
+                            'event_id' => $event->getKey(),
+                            'exception' => $exception->getMessage(),
+                        ]);
+                    }
+                });
+            } else {
+                try {
+                    app(DeliveryService::class)->createForEvent($event);
+                } catch (\Throwable $exception) {
+                    logger()->warning('Webhook delivery creation failed.', [
+                        'event_id' => $event->getKey(),
+                        'exception' => $exception->getMessage(),
+                    ]);
+                }
+            }
+        }
+
         return [
             'event' => $event,
             'created' => true,

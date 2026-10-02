@@ -5,7 +5,7 @@ namespace App\RabbitMq;
 use App\Models\WebhookEvent;
 use InvalidArgumentException;
 
-final class WebhookMessage
+class WebhookMessage
 {
     /**
      * @param  array<string, mixed>  $payload
