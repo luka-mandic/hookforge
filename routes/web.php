@@ -37,6 +37,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/projects/{project}/deliveries', [ProjectDeliveryController::class, 'index'])
         ->name('projects.deliveries.index');
 
+    Route::get('/deliveries', [DeliveryController::class, 'index'])
+        ->name('deliveries.index');
+
     Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show'])
         ->name('deliveries.show');
 

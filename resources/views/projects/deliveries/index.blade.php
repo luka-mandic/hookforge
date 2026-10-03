@@ -15,9 +15,8 @@
     </div>
 
     <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-        <form method="GET" action="{{ route('projects.deliveries.index', $project) }}"
-            class="flex flex-col gap-3 lg:flex-row lg:items-end">
-            <div class="flex-1">
+        <form method="GET" action="{{ route('projects.deliveries.index', $project) }}" class="grid gap-3 xl:grid-cols-6">
+            <div class="xl:col-span-2">
                 <label for="delivery-search"
                     class="mb-1.5 block text-xs uppercase tracking-[0.2em] text-slate-400">Search</label>
                 <input id="delivery-search" name="search" value="{{ $search }}" type="search"
@@ -25,7 +24,7 @@
                     placeholder="Search endpoint, event, or error text">
             </div>
 
-            <div class="lg:w-52">
+            <div class="xl:col-span-1">
                 <label for="delivery-status"
                     class="mb-1.5 block text-xs uppercase tracking-[0.2em] text-slate-400">Status</label>
                 <select id="delivery-status" name="status"
@@ -39,7 +38,42 @@
                 </select>
             </div>
 
-            <div class="flex gap-2">
+            <div class="xl:col-span-1">
+                <label for="event-type-filter" class="mb-1.5 block text-xs uppercase tracking-[0.2em] text-slate-400">Event
+                    type</label>
+                <input id="event-type-filter" name="event_type" type="text" value="{{ $eventType }}"
+                    class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                    placeholder="invoice.paid">
+            </div>
+
+            <div class="xl:col-span-1">
+                <label for="endpoint-filter"
+                    class="mb-1.5 block text-xs uppercase tracking-[0.2em] text-slate-400">Endpoint</label>
+                <select id="endpoint-filter" name="endpoint"
+                    class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-sky-500 focus:outline-none">
+                    <option value="">All endpoints</option>
+                    @foreach ($endpoints as $endpointOption)
+                        <option value="{{ $endpointOption->id }}" @selected($endpointId === $endpointOption->id)>
+                            {{ $endpointOption->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div class="xl:col-span-1">
+                <label for="date-from-filter"
+                    class="mb-1.5 block text-xs uppercase tracking-[0.2em] text-slate-400">From</label>
+                <input id="date-from-filter" name="date_from" type="date" value="{{ $dateFrom }}"
+                    class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-sky-500 focus:outline-none">
+            </div>
+
+            <div class="xl:col-span-1">
+                <label for="date-to-filter"
+                    class="mb-1.5 block text-xs uppercase tracking-[0.2em] text-slate-400">To</label>
+                <input id="date-to-filter" name="date_to" type="date" value="{{ $dateTo }}"
+                    class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-sky-500 focus:outline-none">
+            </div>
+
+            <div class="xl:col-span-6 flex items-center justify-end gap-2">
                 <button type="submit"
                     class="rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-medium text-slate-950 hover:bg-sky-400">
                     Apply
