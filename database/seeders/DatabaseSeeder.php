@@ -21,6 +21,15 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        User::query()->firstOrCreate(
+            ['email' => 'demo@hookforge.test'],
+            [
+                'name' => 'Demo Recruiter',
+                'email_verified_at' => now(),
+                'password' => bcrypt('password'),
+            ],
+        );
+
         $users = User::factory()->count(3)->create();
 
         $users->each(function (User $user): void {

@@ -69,7 +69,7 @@ class WebhookDeliveryService
             $result = $statusCode >= 200 && $statusCode < 300
                 ? DeliveryResult::success($statusCode, $response->body(), $durationMs)
                 : DeliveryResult::failed(
-                    'HTTP status ' . $statusCode,
+                    'HTTP status '.$statusCode,
                     $statusCode,
                     $response->body(),
                     $durationMs,

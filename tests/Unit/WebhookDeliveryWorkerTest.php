@@ -28,7 +28,7 @@ test('webhook signer generates the expected hmac signature', function () {
 
     $signature = (new WebhookSigner)->sign($payload, 'super-secret');
 
-    expect($signature)->toBe('sha256=' . hash_hmac('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'super-secret'));
+    expect($signature)->toBe('sha256='.hash_hmac('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'super-secret'));
 });
 
 test('webhook request builder adds the expected metadata', function () {

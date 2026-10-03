@@ -86,3 +86,39 @@ test('users can enable and disable webhook endpoints', function () {
 
     expect($endpoint->status)->toBe('disabled');
 });
+
+test('authenticated users can access the dashboard overview', function () {
+    $project = Project::factory()->for($this->user)->create();
+
+    $this->actingAs($this->user)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertSeeText('Dashboard')
+        ->assertSeeText('Total events')
+        ->assertSeeText('Successful deliveries')
+        ->assertSeeText('Pending deliveries')
+        ->assertSeeText('Dead-lettered deliveries');
+
+    $this->assertDatabaseHas('projects', [
+        'id' => $project->id,
+        'user_id' => $this->user->id,
+    ]);
+});
+
+test('guests can view a real login form and log in as the demo user', function () {
+    $response = $this->get(route('login'));
+
+    $response->assertOk()
+        ->assertSeeText('Welcome back')
+        ->assertSeeText('Create account')
+        ->assertSeeText('Forgot password?')
+        ->assertSeeText('Login as test user');
+
+    $this->post(route('login.test-user'))
+        ->assertRedirect(route('dashboard'));
+
+    $this->assertAuthenticated();
+    $this->assertDatabaseHas('users', [
+        'email' => 'demo@hookforge.test',
+    ]);
+});
