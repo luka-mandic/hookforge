@@ -128,4 +128,75 @@
             </form>
         </aside>
     </div>
+
+    <div class="mt-8 rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
+        <div class="flex items-center justify-between gap-3">
+            <div>
+                <p class="text-xs uppercase tracking-[0.2em] text-sky-300">Webhook testing</p>
+                <h2 class="mt-2 text-lg font-semibold text-white">Simulated endpoint</h2>
+            </div>
+        </div>
+
+        <form method="POST" action="{{ route('projects.test-endpoints.store', $project) }}"
+            class="mt-5 grid gap-4 md:grid-cols-3">
+            @csrf
+
+            <div>
+                <label for="response_status" class="mb-1.5 block text-sm text-slate-300">Response</label>
+                <select id="response_status" name="response_status"
+                    class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-sky-500 focus:outline-none">
+                    <option value="200">200 OK</option>
+                    <option value="201">201 Created</option>
+                    <option value="400">400 Bad request</option>
+                    <option value="401">401 Unauthorized</option>
+                    <option value="404">404 Not found</option>
+                    <option value="429">429 Too many requests</option>
+                    <option value="500">500 Server error</option>
+                    <option value="timeout">Timeout</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="delay_ms" class="mb-1.5 block text-sm text-slate-300">Delay (ms)</label>
+                <input id="delay_ms" name="delay_ms" type="number" min="0" max="1500" value="250"
+                    class="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none">
+            </div>
+
+            <div class="flex items-end">
+                <button type="submit"
+                    class="inline-flex w-full items-center justify-center rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-medium text-slate-950 hover:bg-sky-400">
+                    Create test endpoint
+                </button>
+            </div>
+        </form>
+
+        @php
+            $simulatedEndpoints = $project
+                ->webhookEndpoints()
+                ->where('name', 'like', 'Test endpoint%')
+                ->latest()
+                ->get();
+        @endphp
+
+        @if ($simulatedEndpoints->isNotEmpty())
+            <div class="mt-5 space-y-3">
+                @foreach ($simulatedEndpoints as $simulatedEndpoint)
+                    <div class="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                        <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                            <div>
+                                <p class="font-medium text-white">{{ $simulatedEndpoint->name }}</p>
+                                <p class="text-sm text-slate-400 break-all">{{ $simulatedEndpoint->url }}</p>
+                            </div>
+                            <span
+                                class="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
+                                active
+                            </span>
+                        </div>
+
+                        <p class="mt-3 text-sm text-slate-300">{{ $simulatedEndpoint->description }}</p>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+    </div>
 @endsection

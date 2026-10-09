@@ -9,6 +9,7 @@ use App\Http\Controllers\ProjectDeliveryController;
 use App\Http\Controllers\ProjectEventController;
 use App\Http\Controllers\WebhookEndpointController;
 use App\Http\Controllers\WebhookEventController;
+use App\Http\Controllers\WebhookSimulatorController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class)->name('health');
@@ -45,6 +46,12 @@ Route::middleware('auth')->group(function () {
 
     Route::post('/projects/{project}/endpoints/{endpoint}/toggle', [WebhookEndpointController::class, 'toggle'])
         ->name('projects.endpoints.toggle');
+
+    Route::post('/projects/{project}/test-endpoints', [WebhookSimulatorController::class, 'store'])
+        ->name('projects.test-endpoints.store');
+
+    Route::match(['GET', 'POST'], '/projects/{project}/test-endpoints/{token}', [WebhookSimulatorController::class, 'handle'])
+        ->name('projects.test-endpoints.handle');
 
     Route::resource('projects.endpoints', WebhookEndpointController::class)
         ->except(['index', 'show'])
