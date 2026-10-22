@@ -18,6 +18,9 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature', 'Unit');
 
+// Integration tests talk to real infrastructure and skip themselves when it is unavailable.
+pest()->extend(TestCase::class)->in('Integration');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

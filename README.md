@@ -95,3 +95,11 @@ The AMQP configuration is driven by environment variables in `.env`, and publish
 Event publishing (`POST /api/v1/projects/{project}/events`) is rate limited per authenticated user and project using Redis. Exceeding the limit returns HTTP 429 with `Retry-After`, `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers.
 
 Configure via `RATE_LIMIT_EVENTS_PER_MINUTE` (default 60), `RATE_LIMIT_EVENTS_DECAY_SECONDS` (default 60) and `CACHE_LIMITER_STORE` (default `redis`).
+
+## Testing
+
+Run the unit and feature suites with `./vendor/bin/pest`.
+
+Integration tests live in `tests/Integration` and run against real Redis, RabbitMQ and PostgreSQL. Each test skips itself when its service is unreachable. Run them with `./vendor/bin/pest --testsuite=Integration`.
+
+Connection settings can be overridden with `INTEGRATION_REDIS_HOST`/`PORT`, `INTEGRATION_RABBITMQ_HOST`/`PORT`/`USER`/`PASSWORD` and `INTEGRATION_PG_HOST`/`PORT`/`DATABASE`/`USERNAME`/`PASSWORD`. The PostgreSQL test runs `migrate:fresh`, so the database name must end in `_test`. The Redis test needs the phpredis extension or predis.

@@ -24,23 +24,25 @@ class WebhookEndpointController extends Controller
             ->with('status', 'Webhook endpoint created successfully.');
     }
 
-    public function update(Project $project, WebhookEndpoint $endpoint, UpdateWebhookEndpointRequest $request, WebhookEndpointService $service): RedirectResponse
+    public function update(WebhookEndpoint $endpoint, UpdateWebhookEndpointRequest $request, WebhookEndpointService $service): RedirectResponse
     {
         $this->authorize('update', $endpoint);
 
         $service->update($endpoint, $request->validated());
 
-        return redirect()->route('projects.show', $project)
+        return redirect()->route('projects.show', $endpoint->project_id)
             ->with('status', 'Webhook endpoint updated successfully.');
     }
 
-    public function destroy(Project $project, WebhookEndpoint $endpoint, WebhookEndpointService $service): RedirectResponse
+    public function destroy(WebhookEndpoint $endpoint, WebhookEndpointService $service): RedirectResponse
     {
         $this->authorize('delete', $endpoint);
 
+        $projectId = $endpoint->project_id;
+
         $service->delete($endpoint);
 
-        return redirect()->route('projects.show', $project)
+        return redirect()->route('projects.show', $projectId)
             ->with('status', 'Webhook endpoint deleted successfully.');
     }
 
