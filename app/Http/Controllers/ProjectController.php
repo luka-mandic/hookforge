@@ -8,15 +8,16 @@ use App\Models\Project;
 use App\Services\ProjectService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ProjectController extends Controller
 {
     use AuthorizesRequests;
 
-    public function index(): View
+    public function index(Request $request): View
     {
-        $projects = auth()->user()->projects()->latest()->get();
+        $projects = $this->authenticatedUser($request)->projects()->latest()->get();
 
         return view('projects.index', compact('projects'));
     }
@@ -30,7 +31,7 @@ class ProjectController extends Controller
     {
         $this->authorize('create', Project::class);
 
-        $project = $service->create(auth()->user(), $request->validated());
+        $project = $service->create($this->authenticatedUser($request), $request->validated());
 
         return redirect()->route('projects.show', $project)
             ->with('status', 'Project created successfully.');

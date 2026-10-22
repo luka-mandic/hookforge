@@ -4,21 +4,24 @@ namespace App\Services;
 
 use App\Models\Project;
 use App\Models\User;
+use App\Services\Concerns\ReadsAttributes;
 use Illuminate\Support\Str;
 
 class ProjectService
 {
+    use ReadsAttributes;
+
     /**
      * @param  array<string, mixed>  $attributes
      */
     public function create(User $user, array $attributes): Project
     {
-        $name = (string) $attributes['name'];
+        $name = $this->requiredString($attributes, 'name');
 
         $project = new Project([
             'user_id' => $user->getKey(),
             'name' => $name,
-            'description' => isset($attributes['description']) && is_string($attributes['description']) ? $attributes['description'] : null,
+            'description' => $this->optionalString($attributes, 'description'),
             'status' => 'active',
         ]);
 
@@ -26,7 +29,7 @@ class ProjectService
 
         $user->projects()->save($project);
 
-        return $project->fresh();
+        return $project->refresh();
     }
 
     /**
@@ -34,23 +37,20 @@ class ProjectService
      */
     public function update(Project $project, array $attributes): Project
     {
-        $name = (string) $attributes['name'];
+        $name = $this->requiredString($attributes, 'name');
 
         $changes = [
             'name' => $name,
-            'description' => array_key_exists('description', $attributes) && is_string($attributes['description']) ? $attributes['description'] : null,
+            'description' => $this->optionalString($attributes, 'description'),
+            'status' => $this->optionalString($attributes, 'status', $project->status),
         ];
 
-        if (array_key_exists('status', $attributes) && is_string($attributes['status'])) {
-            $changes['status'] = $attributes['status'];
-        }
-
-        $changes['slug'] = $this->resolveUniqueSlug($project->user, $name, $project->id);
+        $changes['slug'] = $this->resolveUniqueSlug($project->user()->firstOrFail(), $name, $project->id);
 
         $project->fill($changes);
         $project->save();
 
-        return $project->fresh();
+        return $project->refresh();
     }
 
     public function delete(Project $project): void

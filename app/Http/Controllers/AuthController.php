@@ -17,12 +17,15 @@ class AuthController extends Controller
 
     public function login(Request $request): RedirectResponse
     {
-        $credentials = $request->validate([
+        $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
-        if (Auth::attempt($credentials, $request->boolean('remember'))) {
+        if (Auth::attempt([
+            'email' => $request->string('email')->toString(),
+            'password' => $request->string('password')->toString(),
+        ], $request->boolean('remember'))) {
             $request->session()->regenerate();
 
             return redirect()->intended(route('dashboard'));

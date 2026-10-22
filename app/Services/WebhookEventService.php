@@ -5,10 +5,19 @@ namespace App\Services;
 use App\Models\Project;
 use App\Models\WebhookEvent;
 use App\RabbitMq\EventPublisher;
+use App\Services\Concerns\ReadsAttributes;
+use Closure;
 use Illuminate\Support\Facades\DB;
 
 class WebhookEventService
 {
+    use ReadsAttributes;
+
+    public function __construct(
+        protected EventPublisher $eventPublisher,
+        protected DeliveryService $deliveryService,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $attributes
      * @return array{event: WebhookEvent, created: bool}
@@ -29,8 +38,8 @@ class WebhookEventService
         }
 
         $event = $project->webhookEvents()->create([
-            'event_type' => (string) $attributes['type'],
-            'payload' => $attributes['data'],
+            'event_type' => $this->requiredString($attributes, 'type'),
+            'payload' => $attributes['data'] ?? [],
             'status' => 'queued',
             'idempotency_key' => $idempotencyKey,
         ]);
@@ -41,42 +50,8 @@ class WebhookEventService
             'event_type' => $event->event_type,
         ]);
 
-        if (app()->bound(EventPublisher::class)) {
-            DB::afterCommit(function () use ($event) {
-                try {
-                    app(EventPublisher::class)->publish($event);
-                } catch (\Throwable $exception) {
-                    logger()->warning('Webhook event publication failed.', [
-                        'event_id' => $event->getKey(),
-                        'exception' => $exception->getMessage(),
-                    ]);
-                }
-            });
-        }
-
-        if (app()->bound(DeliveryService::class)) {
-            if (DB::transactionLevel() > 0) {
-                DB::afterCommit(function () use ($event) {
-                    try {
-                        app(DeliveryService::class)->createForEvent($event);
-                    } catch (\Throwable $exception) {
-                        logger()->warning('Webhook delivery creation failed.', [
-                            'event_id' => $event->getKey(),
-                            'exception' => $exception->getMessage(),
-                        ]);
-                    }
-                });
-            } else {
-                try {
-                    app(DeliveryService::class)->createForEvent($event);
-                } catch (\Throwable $exception) {
-                    logger()->warning('Webhook delivery creation failed.', [
-                        'event_id' => $event->getKey(),
-                        'exception' => $exception->getMessage(),
-                    ]);
-                }
-            }
-        }
+        $this->afterCommit('Webhook event publication failed.', $event, fn () => $this->eventPublisher->publish($event));
+        $this->afterCommit('Webhook delivery creation failed.', $event, fn () => $this->deliveryService->createForEvent($event));
 
         return [
             'event' => $event,
@@ -96,5 +71,25 @@ class WebhookEventService
         }
 
         return null;
+    }
+
+    /**
+     * Side effects run after the surrounding transaction commits (immediately when there is none).
+     * Failures are logged, never thrown, so a broker outage cannot fail event ingestion.
+     *
+     * @param  Closure(): mixed  $callback
+     */
+    protected function afterCommit(string $failureMessage, WebhookEvent $event, Closure $callback): void
+    {
+        DB::afterCommit(function () use ($failureMessage, $event, $callback): void {
+            try {
+                $callback();
+            } catch (\Throwable $exception) {
+                logger()->warning($failureMessage, [
+                    'event_id' => $event->id,
+                    'exception' => $exception->getMessage(),
+                ]);
+            }
+        });
     }
 }

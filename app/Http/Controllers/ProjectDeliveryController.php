@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Project;
+use App\Services\DeliveryFilters;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -15,20 +16,14 @@ class ProjectDeliveryController extends Controller
     {
         $this->authorize('view', $project);
 
-        $status = $request->string('status')->toString();
-        $search = trim((string) $request->query('search', ''));
-        $eventType = $request->string('event_type')->toString();
-        $endpointId = $request->string('endpoint')->toString();
-        $dateFrom = $request->input('date_from');
-        $dateTo = $request->input('date_to');
+        $filters = DeliveryFilters::fromRequest($request);
+        $search = trim($request->string('search')->toString());
 
-        $deliveries = $project->webhookDeliveries()
-            ->with(['endpoint', 'event'])
-            ->when($status !== '', fn ($query) => $query->where('status', $status))
-            ->when($eventType !== '', fn ($query) => $query->whereRelation('event', 'event_type', $eventType))
-            ->when($endpointId !== '', fn ($query) => $query->where('endpoint_id', $endpointId))
-            ->when(is_string($dateFrom) && $dateFrom !== '', fn ($query) => $query->whereDate('created_at', '>=', $dateFrom))
-            ->when(is_string($dateTo) && $dateTo !== '', fn ($query) => $query->whereDate('created_at', '<=', $dateTo))
+        $query = $project->webhookDeliveries()
+            ->getQuery()
+            ->with(['endpoint', 'event']);
+
+        $deliveries = $filters->apply($query)
             ->when($search !== '', function ($query) use ($search) {
                 $query->where(function ($q) use ($search) {
                     $q->whereHas('endpoint', fn ($endpointQuery) => $endpointQuery->where('name', 'like', "%{$search}%"))
@@ -46,13 +41,14 @@ class ProjectDeliveryController extends Controller
         return view('projects.deliveries.index', compact(
             'project',
             'deliveries',
-            'status',
             'search',
-            'eventType',
-            'endpointId',
-            'dateFrom',
-            'dateTo',
             'endpoints',
-        ));
+        ) + [
+            'status' => $filters->status,
+            'eventType' => $filters->eventType,
+            'endpointId' => $filters->endpointId,
+            'dateFrom' => $filters->dateFrom,
+            'dateTo' => $filters->dateTo,
+        ]);
     }
 }

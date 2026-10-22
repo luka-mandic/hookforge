@@ -8,7 +8,7 @@ use InvalidArgumentException;
 class WebhookMessage
 {
     /**
-     * @param  array<string, mixed>  $payload
+     * @param  array<mixed>  $payload
      */
     public function __construct(
         public readonly string $projectId,
@@ -56,8 +56,8 @@ class WebhookMessage
     public static function fromEvent(WebhookEvent $event, RabbitMqConfig $config): self
     {
         return self::fromPayload([
-            'project_id' => (string) $event->project_id,
-            'event_id' => (string) $event->getKey(),
+            'project_id' => $event->project_id,
+            'event_id' => $event->id,
             'event_type' => $event->event_type,
             'payload' => $event->payload,
         ], $config);

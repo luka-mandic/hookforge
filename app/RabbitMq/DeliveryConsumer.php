@@ -15,7 +15,7 @@ final class DeliveryConsumer
     ) {}
 
     /**
-     * @param  array<string, mixed>  $message
+     * @param  array<mixed>  $message
      */
     public function handle(array $message): DeliveryResult
     {
@@ -50,15 +50,15 @@ final class DeliveryConsumer
         $channel->basic_consume($config->queue, '', false, false, false, false, function (AMQPMessage $message) use ($channel): void {
             try {
                 $payload = json_decode($message->body, true, 512, JSON_THROW_ON_ERROR);
-                $this->handle((array) $payload);
-                $channel->basic_ack($message->delivery_info['delivery_tag']);
+                $this->handle(is_array($payload) ? $payload : []);
+                $channel->basic_ack($message->getDeliveryTag());
             } catch (\Throwable $exception) {
                 logger()->warning('Webhook delivery message could not be processed.', [
                     'message' => $message->body,
                     'exception' => $exception->getMessage(),
                 ]);
 
-                $channel->basic_nack($message->delivery_info['delivery_tag'], false, false);
+                $channel->basic_nack($message->getDeliveryTag(), false, false);
             }
         });
 

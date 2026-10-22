@@ -45,12 +45,12 @@ final class WebhookDeliveryMessage extends WebhookMessage
 
         return new self(
             (string) $event->project_id,
-            (string) $event->getKey(),
+            $event->id,
             $event->event_type,
             $payload,
             $config->routingKeyFor($event->event_type),
             (string) $delivery->endpoint_id,
-            (string) $delivery->getKey(),
+            $delivery->id,
             $endpoint->url,
         );
     }

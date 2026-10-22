@@ -7,10 +7,8 @@ use App\Models\WebhookDelivery;
 final class WebhookRequestBuilder
 {
     public function __construct(
-        protected ?WebhookSigner $signer = null,
-    ) {
-        $this->signer ??= new WebhookSigner;
-    }
+        protected WebhookSigner $signer = new WebhookSigner,
+    ) {}
 
     /**
      * @return array{method: string, url: string, headers: array<string, string>, body: string}
@@ -29,7 +27,7 @@ final class WebhookRequestBuilder
                 'Content-Type' => 'application/json',
                 'User-Agent' => 'hookforge/1.0',
                 'X-Hookforge-Event' => $event->event_type,
-                'X-Hookforge-Delivery' => $delivery->getKey(),
+                'X-Hookforge-Delivery' => $delivery->id,
                 'X-Hookforge-Signature' => $this->signer->sign($payload, $endpoint->secret ?? ''),
             ],
             'body' => $body,

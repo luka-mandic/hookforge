@@ -2,55 +2,52 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Project;
+use App\Models\WebhookDelivery;
+use App\Models\WebhookEvent;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function index(): View
+    public function index(Request $request): View
     {
-        $projects = auth()->user()->projects()->with(['webhookEvents', 'webhookDeliveries'])->latest()->get();
+        $userId = $this->authenticatedUser($request)->id;
+
+        $ownedByUser = fn (Builder $query): Builder => $query->where('user_id', $userId);
+
+        // One grouped query replaces a COUNT per project and status.
+        $deliveryCounts = WebhookDelivery::query()
+            ->whereHas('project', $ownedByUser)
+            ->selectRaw('status, count(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        $eventCount = WebhookEvent::query()->whereHas('project', $ownedByUser)->count();
+
+        $count = fn (string ...$statuses): int => array_sum(array_map(fn (string $status): int => is_numeric($deliveryCounts[$status] ?? null) ? (int) $deliveryCounts[$status] : 0, $statuses));
 
         $stats = [
-            [
-                'label' => 'Total events',
-                'value' => (string) $projects->sum(fn (Project $project) => $project->webhookEvents()->count()),
-                'tone' => 'sky',
-            ],
-            [
-                'label' => 'Successful deliveries',
-                'value' => (string) $projects->sum(fn (Project $project) => $project->webhookDeliveries()->where('status', 'delivered')->count()),
-                'tone' => 'emerald',
-            ],
-            [
-                'label' => 'Failed deliveries',
-                'value' => (string) $projects->sum(fn (Project $project) => $project->webhookDeliveries()->where('status', 'failed')->count()),
-                'tone' => 'rose',
-            ],
-            [
-                'label' => 'Pending deliveries',
-                'value' => (string) $projects->sum(fn (Project $project) => $project->webhookDeliveries()->whereIn('status', ['queued', 'processing'])->count()),
-                'tone' => 'amber',
-            ],
-            [
-                'label' => 'Dead-lettered deliveries',
-                'value' => (string) $projects->sum(fn (Project $project) => $project->webhookDeliveries()->where('status', 'dead_lettered')->count()),
-                'tone' => 'fuchsia',
-            ],
+            ['label' => 'Total events', 'value' => (string) $eventCount, 'tone' => 'sky'],
+            ['label' => 'Successful deliveries', 'value' => (string) $count('delivered'), 'tone' => 'emerald'],
+            ['label' => 'Failed deliveries', 'value' => (string) $count('failed'), 'tone' => 'rose'],
+            ['label' => 'Pending deliveries', 'value' => (string) $count('queued', 'processing'), 'tone' => 'amber'],
+            ['label' => 'Dead-lettered deliveries', 'value' => (string) $count('dead_lettered'), 'tone' => 'fuchsia'],
         ];
 
-        $recentEvents = $projects
-            ->flatMap(fn (Project $project) => $project->webhookEvents()->latest()->limit(5)->get())
-            ->sortByDesc('created_at')
-            ->take(5)
-            ->values();
+        $recentEvents = WebhookEvent::query()
+            ->whereHas('project', $ownedByUser)
+            ->latest()
+            ->limit(5)
+            ->get();
 
-        $recentDeliveries = $projects
-            ->flatMap(fn (Project $project) => $project->webhookDeliveries()->with(['endpoint', 'event'])->latest()->limit(8)->get())
-            ->sortByDesc('created_at')
-            ->take(8)
-            ->values();
+        $recentDeliveries = WebhookDelivery::query()
+            ->whereHas('project', $ownedByUser)
+            ->with(['endpoint', 'event'])
+            ->latest()
+            ->limit(8)
+            ->get();
 
-        return view('dashboard', compact('projects', 'stats', 'recentEvents', 'recentDeliveries'));
+        return view('dashboard', compact('stats', 'recentEvents', 'recentDeliveries'));
     }
 }

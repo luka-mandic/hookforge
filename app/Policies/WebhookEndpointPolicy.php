@@ -10,21 +10,26 @@ class WebhookEndpointPolicy
 {
     public function view(User $user, WebhookEndpoint $endpoint): bool
     {
-        return $user->is($endpoint->project->user);
+        return $this->owns($user, $endpoint->project);
     }
 
     public function update(User $user, WebhookEndpoint $endpoint): bool
     {
-        return $user->is($endpoint->project->user);
+        return $this->owns($user, $endpoint->project);
     }
 
     public function delete(User $user, WebhookEndpoint $endpoint): bool
     {
-        return $user->is($endpoint->project->user);
+        return $this->owns($user, $endpoint->project);
     }
 
     public function create(User $user, Project $project): bool
     {
-        return $user->is($project->user);
+        return $this->owns($user, $project);
+    }
+
+    private function owns(User $user, ?Project $project): bool
+    {
+        return $project !== null && $user->is($project->user);
     }
 }

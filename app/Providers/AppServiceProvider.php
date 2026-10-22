@@ -16,6 +16,7 @@ use App\Services\RetryPolicy;
 use App\Services\WebhookDeliveryService;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +46,7 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-        $this->app->bind(DeliveryService::class, function ($app): DeliveryService {
+        $this->app->bind(DeliveryService::class, function (Application $app): DeliveryService {
             return new DeliveryService(
                 $app->make(DeliveryPublisher::class),
             );
@@ -59,7 +60,7 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-        $this->app->singleton(WebhookDeliveryService::class, function ($app): WebhookDeliveryService {
+        $this->app->singleton(WebhookDeliveryService::class, function (Application $app): WebhookDeliveryService {
             return new WebhookDeliveryService(
                 retryPolicy: $app->make(RetryPolicy::class),
             );
@@ -84,12 +85,12 @@ class AppServiceProvider extends ServiceProvider
     {
         RateLimiter::for('event-publishing', function (Request $request): Limit {
             $project = $request->route('project');
-            $projectKey = $project instanceof Project ? (string) $project->getKey() : (string) $project;
-            $identity = $request->user()?->getAuthIdentifier() ?? $request->ip();
+            $projectKey = $project instanceof Project ? $project->id : (is_string($project) ? $project : '');
+            $identity = $request->user()->id ?? $request->ip() ?? 'unknown';
 
             return Limit::perSecond(
-                (int) config('rate_limiting.event_publishing.max_attempts'),
-                (int) config('rate_limiting.event_publishing.decay_seconds'),
+                config()->integer('rate_limiting.event_publishing.max_attempts'),
+                config()->integer('rate_limiting.event_publishing.decay_seconds'),
             )->by("{$projectKey}|{$identity}");
         });
     }

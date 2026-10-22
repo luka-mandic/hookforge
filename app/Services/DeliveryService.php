@@ -5,21 +5,15 @@ namespace App\Services;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookEndpoint;
 use App\Models\WebhookEvent;
-use App\RabbitMq\AmqpMessageTransport;
+use App\Models\WebhookSubscription;
 use App\RabbitMq\DeliveryPublisher;
-use App\RabbitMq\RabbitMqConfig;
 use Illuminate\Support\Collection;
 
 class DeliveryService
 {
     public function __construct(
-        protected ?DeliveryPublisher $publisher = null,
-    ) {
-        $this->publisher ??= new DeliveryPublisher(
-            RabbitMqConfig::fromEnvironment(),
-            new AmqpMessageTransport,
-        );
-    }
+        protected DeliveryPublisher $publisher,
+    ) {}
 
     /**
      * @return Collection<int, WebhookDelivery>
@@ -46,15 +40,15 @@ class DeliveryService
             ->where('status', 'active')
             ->with('endpoint')
             ->get()
-            ->map(fn ($subscription) => $subscription->endpoint)
-            ->filter(fn (?WebhookEndpoint $endpoint) => $endpoint !== null && $endpoint->isEnabled())
+            ->map(fn (WebhookSubscription $subscription) => $subscription->endpoint)
+            ->filter(fn (?WebhookEndpoint $endpoint): bool => $endpoint !== null && $endpoint->isEnabled())
             ->unique('id')
             ->values();
     }
 
     protected function createDelivery(WebhookEvent $event, WebhookEndpoint $endpoint): WebhookDelivery
     {
-        $delivery = $event->project->webhookDeliveries()->create([
+        $delivery = $event->project()->firstOrFail()->webhookDeliveries()->create([
             'project_id' => $event->project_id,
             'endpoint_id' => $endpoint->getKey(),
             'event_id' => $event->getKey(),
@@ -70,7 +64,7 @@ class DeliveryService
             'attempt_number' => 0,
         ]);
 
-        return $delivery->fresh();
+        return $delivery->refresh();
     }
 
     /**

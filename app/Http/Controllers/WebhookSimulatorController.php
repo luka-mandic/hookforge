@@ -25,8 +25,8 @@ class WebhookSimulatorController extends Controller
             'delay_ms' => ['nullable', 'integer', 'min:0', 'max:1500'],
         ]);
 
-        $status = (string) $validated['response_status'];
-        $delayMs = (int) ($validated['delay_ms'] ?? 0);
+        $status = $request->string('response_status')->toString();
+        $delayMs = $request->integer('delay_ms');
         $token = Str::random(32);
 
         $endpoint = WebhookEndpoint::query()->create([
@@ -61,9 +61,10 @@ class WebhookSimulatorController extends Controller
             ->where('secret', $token)
             ->firstOrFail();
 
-        $config = Cache::get($this->cacheKey($project, $token), ['response_status' => '200', 'delay_ms' => 0]);
-        $responseStatus = (string) ($config['response_status'] ?? '200');
-        $delayMs = min((int) ($config['delay_ms'] ?? 0), 1500);
+        $config = Cache::get($this->cacheKey($project, $token));
+        $config = is_array($config) ? $config : [];
+        $responseStatus = is_string($config['response_status'] ?? null) ? $config['response_status'] : '200';
+        $delayMs = min(is_int($config['delay_ms'] ?? null) ? $config['delay_ms'] : 0, 1500);
 
         if ($responseStatus === 'timeout') {
             usleep(min(2500000, max($delayMs, 2000000)));

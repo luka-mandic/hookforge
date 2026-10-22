@@ -9,11 +9,9 @@ use Illuminate\Support\Facades\Http;
 class WebhookDeliveryService
 {
     public function __construct(
-        protected ?WebhookRequestBuilder $requestBuilder = null,
+        protected WebhookRequestBuilder $requestBuilder = new WebhookRequestBuilder,
         protected RetryPolicy $retryPolicy = new DefaultRetryPolicy,
-    ) {
-        $this->requestBuilder ??= new WebhookRequestBuilder(new WebhookSigner);
-    }
+    ) {}
 
     public function process(WebhookDelivery $delivery): DeliveryResult
     {
@@ -37,15 +35,9 @@ class WebhookDeliveryService
                 'next_attempt_at' => null,
             ]);
 
-            logger()->info('webhook.delivery.started', [
-                'project_id' => $current->project_id,
-                'event_id' => $current->event_id,
-                'delivery_id' => $current->getKey(),
-                'endpoint_id' => $current->endpoint_id,
-                'attempt_number' => $current->attempt_count + 1,
-            ]);
+            logger()->info('webhook.delivery.started', $this->logContext($current, $current->attempt_count + 1));
 
-            return ['state' => 'claimed', 'delivery' => $current->fresh()];
+            return ['state' => 'claimed', 'delivery' => $current->refresh()];
         });
 
         $claimState = $claim['state'];
@@ -69,8 +61,9 @@ class WebhookDeliveryService
 
         try {
             $response = Http::withHeaders($request['headers'])
+                ->withBody($request['body'], 'application/json')
                 ->timeout(10)
-                ->post($request['url'], json_decode($request['body'], true, 512, JSON_THROW_ON_ERROR));
+                ->post($request['url']);
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
             $statusCode = $response->status();
@@ -106,15 +99,9 @@ class WebhookDeliveryService
             'delivered_at' => null,
         ]);
 
-        logger()->info('webhook.delivery.retried', [
-            'project_id' => $delivery->project_id,
-            'event_id' => $delivery->event_id,
-            'delivery_id' => $delivery->getKey(),
-            'endpoint_id' => $delivery->endpoint_id,
-            'attempt_number' => $delivery->attempt_count + 1,
-        ]);
+        logger()->info('webhook.delivery.retried', $this->logContext($delivery, $delivery->attempt_count + 1));
 
-        return $delivery->fresh();
+        return $delivery->refresh();
     }
 
     protected function persistResult(WebhookDelivery $delivery, DeliveryResult $result): void
@@ -143,14 +130,9 @@ class WebhookDeliveryService
                 'next_attempt_at' => null,
             ]);
 
-            logger()->info('webhook.delivery.succeeded', [
-                'project_id' => $delivery->project_id,
-                'event_id' => $delivery->event_id,
-                'delivery_id' => $delivery->getKey(),
-                'endpoint_id' => $delivery->endpoint_id,
-                'attempt_number' => $attemptNumber,
+            logger()->info('webhook.delivery.succeeded', $this->logContext($delivery, $attemptNumber, [
                 'http_status' => $result->statusCode,
-            ]);
+            ]));
 
             return;
         }
@@ -164,24 +146,14 @@ class WebhookDeliveryService
                 'delivered_at' => null,
             ]);
 
-            logger()->warning('webhook.delivery.failed', [
-                'project_id' => $delivery->project_id,
-                'event_id' => $delivery->event_id,
-                'delivery_id' => $delivery->getKey(),
-                'endpoint_id' => $delivery->endpoint_id,
-                'attempt_number' => $attemptNumber,
+            logger()->warning('webhook.delivery.failed', $this->logContext($delivery, $attemptNumber, [
                 'http_status' => $result->statusCode,
                 'error' => $result->errorMessage,
-            ]);
+            ]));
 
-            logger()->info('webhook.delivery.retried', [
-                'project_id' => $delivery->project_id,
-                'event_id' => $delivery->event_id,
-                'delivery_id' => $delivery->getKey(),
-                'endpoint_id' => $delivery->endpoint_id,
-                'attempt_number' => $attemptNumber,
+            logger()->info('webhook.delivery.retried', $this->logContext($delivery, $attemptNumber, [
                 'next_attempt_at' => now()->addMilliseconds($this->retryPolicy->delayForAttempt($delivery->attempt_count)),
-            ]);
+            ]));
 
             return;
         }
@@ -196,14 +168,25 @@ class WebhookDeliveryService
             'next_attempt_at' => null,
         ]);
 
-        logger()->warning('webhook.delivery.dead_lettered', [
-            'project_id' => $delivery->project_id,
-            'event_id' => $delivery->event_id,
-            'delivery_id' => $delivery->getKey(),
-            'endpoint_id' => $delivery->endpoint_id,
-            'attempt_number' => $attemptNumber,
+        logger()->warning('webhook.delivery.dead_lettered', $this->logContext($delivery, $attemptNumber, [
             'http_status' => $result->statusCode,
             'error' => $result->errorMessage,
-        ]);
+        ]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    protected function logContext(WebhookDelivery $delivery, int $attemptNumber, array $extra = []): array
+    {
+        return [
+            'project_id' => $delivery->project_id,
+            'event_id' => $delivery->event_id,
+            'delivery_id' => $delivery->id,
+            'endpoint_id' => $delivery->endpoint_id,
+            'attempt_number' => $attemptNumber,
+            ...$extra,
+        ];
     }
 }

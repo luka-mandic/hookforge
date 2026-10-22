@@ -18,7 +18,7 @@ final class RabbitMqConfig
     ) {}
 
     /**
-     * @param  array<string, mixed>  $attributes
+     * @param  array<mixed>  $attributes
      */
     public static function fromArray(array $attributes): self
     {
@@ -36,7 +36,7 @@ final class RabbitMqConfig
 
     public static function fromEnvironment(): self
     {
-        return self::fromArray(config('rabbitmq', []));
+        return self::fromArray(config()->array('rabbitmq', []));
     }
 
     public function routingKeyFor(string $eventType): string
