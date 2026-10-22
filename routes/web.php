@@ -59,6 +59,7 @@ Route::middleware('auth')->group(function () {
 
     Route::prefix('api/v1')->group(function () {
         Route::post('/projects/{project}/events', [WebhookEventController::class, 'store'])
+            ->middleware('throttle:event-publishing')
             ->name('api.v1.projects.events.store');
     });
 });

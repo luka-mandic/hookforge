@@ -89,3 +89,9 @@ Example payload:
 ```
 
 The AMQP configuration is driven by environment variables in `.env`, and publishing is deferred until the related database transaction is committed.
+
+## API rate limiting
+
+Event publishing (`POST /api/v1/projects/{project}/events`) is rate limited per authenticated user and project using Redis. Exceeding the limit returns HTTP 429 with `Retry-After`, `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers.
+
+Configure via `RATE_LIMIT_EVENTS_PER_MINUTE` (default 60), `RATE_LIMIT_EVENTS_DECAY_SECONDS` (default 60) and `CACHE_LIMITER_STORE` (default `redis`).
