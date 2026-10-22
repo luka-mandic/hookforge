@@ -35,6 +35,12 @@ class WebhookEventService
             'idempotency_key' => $idempotencyKey,
         ]);
 
+        logger()->info('webhook.event.published', [
+            'project_id' => $project->getKey(),
+            'event_id' => $event->getKey(),
+            'event_type' => $event->event_type,
+        ]);
+
         if (app()->bound(EventPublisher::class)) {
             DB::afterCommit(function () use ($event) {
                 try {

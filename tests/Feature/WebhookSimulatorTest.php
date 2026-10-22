@@ -25,7 +25,7 @@ test('developers can create a simulated webhook endpoint for a chosen status cod
 
     expect($endpoint)->not->toBeNull()
         ->and($endpoint->status)->toBe('active')
-        ->and($endpoint->url)->toContain('/projects/' . $this->project->id . '/test-endpoints/');
+        ->and($endpoint->url)->toContain('/projects/'.$this->project->id.'/test-endpoints/');
 });
 
 test('the simulated webhook endpoint returns the configured status and delay without blocking excessively', function () {

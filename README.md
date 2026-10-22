@@ -60,6 +60,12 @@ docker compose down
 - RabbitMQ user: guest
 - RabbitMQ password: guest
 
+## Logging strategy
+
+Structured application logging is used for the webhook lifecycle so operators can trace event publication, retries, delivery attempts, and dead-letter transitions without exposing secrets or payload data.
+
+See [docs/logging-strategy.md](docs/logging-strategy.md) for the full logging contract and examples.
+
 ## RabbitMQ topology
 
 Hookforge publishes webhook events to RabbitMQ using a topic exchange and explicit routing keys.

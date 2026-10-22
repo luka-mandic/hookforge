@@ -31,12 +31,12 @@ class WebhookSimulatorController extends Controller
 
         $endpoint = WebhookEndpoint::query()->create([
             'project_id' => $project->id,
-            'name' => 'Test endpoint · ' . $status,
+            'name' => 'Test endpoint · '.$status,
             'url' => route('projects.test-endpoints.handle', ['project' => $project, 'token' => $token]),
             'secret' => $token,
             'description' => $status === 'timeout'
                 ? 'Simulated timeout endpoint. It intentionally delays before returning a timeout-style response.'
-                : 'Simulated status: ' . $status . ' (delay: ' . $delayMs . 'ms)',
+                : 'Simulated status: '.$status.' (delay: '.$delayMs.'ms)',
             'status' => 'active',
         ]);
 
@@ -90,6 +90,6 @@ class WebhookSimulatorController extends Controller
 
     protected function cacheKey(Project $project, string $token): string
     {
-        return 'webhook-simulator:' . $project->id . ':' . $token;
+        return 'webhook-simulator:'.$project->id.':'.$token;
     }
 }

@@ -62,6 +62,14 @@ class DeliveryService
             'attempt_count' => 0,
         ]);
 
+        logger()->info('webhook.delivery.created', [
+            'project_id' => $event->project_id,
+            'event_id' => $event->getKey(),
+            'delivery_id' => $delivery->getKey(),
+            'endpoint_id' => $endpoint->getKey(),
+            'attempt_number' => 0,
+        ]);
+
         return $delivery->fresh();
     }
 

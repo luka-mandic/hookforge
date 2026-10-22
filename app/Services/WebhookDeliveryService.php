@@ -37,6 +37,14 @@ class WebhookDeliveryService
                 'next_attempt_at' => null,
             ]);
 
+            logger()->info('webhook.delivery.started', [
+                'project_id' => $current->project_id,
+                'event_id' => $current->event_id,
+                'delivery_id' => $current->getKey(),
+                'endpoint_id' => $current->endpoint_id,
+                'attempt_number' => $current->attempt_count + 1,
+            ]);
+
             return ['state' => 'claimed', 'delivery' => $current->fresh()];
         });
 
@@ -98,6 +106,14 @@ class WebhookDeliveryService
             'delivered_at' => null,
         ]);
 
+        logger()->info('webhook.delivery.retried', [
+            'project_id' => $delivery->project_id,
+            'event_id' => $delivery->event_id,
+            'delivery_id' => $delivery->getKey(),
+            'endpoint_id' => $delivery->endpoint_id,
+            'attempt_number' => $delivery->attempt_count + 1,
+        ]);
+
         return $delivery->fresh();
     }
 
@@ -106,8 +122,10 @@ class WebhookDeliveryService
         $delivery->increment('attempt_count');
         $delivery->refresh();
 
+        $attemptNumber = $delivery->attempt_count;
+
         $delivery->attempts()->create([
-            'attempt_number' => $delivery->attempt_count,
+            'attempt_number' => $attemptNumber,
             'status' => $result->isSuccessful() ? 'succeeded' : 'failed',
             'http_status' => $result->statusCode,
             'response_body' => $result->responseBody,
@@ -125,6 +143,15 @@ class WebhookDeliveryService
                 'next_attempt_at' => null,
             ]);
 
+            logger()->info('webhook.delivery.succeeded', [
+                'project_id' => $delivery->project_id,
+                'event_id' => $delivery->event_id,
+                'delivery_id' => $delivery->getKey(),
+                'endpoint_id' => $delivery->endpoint_id,
+                'attempt_number' => $attemptNumber,
+                'http_status' => $result->statusCode,
+            ]);
+
             return;
         }
 
@@ -135,6 +162,25 @@ class WebhookDeliveryService
                 'last_error' => $result->errorMessage,
                 'next_attempt_at' => now()->addMilliseconds($this->retryPolicy->delayForAttempt($delivery->attempt_count)),
                 'delivered_at' => null,
+            ]);
+
+            logger()->warning('webhook.delivery.failed', [
+                'project_id' => $delivery->project_id,
+                'event_id' => $delivery->event_id,
+                'delivery_id' => $delivery->getKey(),
+                'endpoint_id' => $delivery->endpoint_id,
+                'attempt_number' => $attemptNumber,
+                'http_status' => $result->statusCode,
+                'error' => $result->errorMessage,
+            ]);
+
+            logger()->info('webhook.delivery.retried', [
+                'project_id' => $delivery->project_id,
+                'event_id' => $delivery->event_id,
+                'delivery_id' => $delivery->getKey(),
+                'endpoint_id' => $delivery->endpoint_id,
+                'attempt_number' => $attemptNumber,
+                'next_attempt_at' => now()->addMilliseconds($this->retryPolicy->delayForAttempt($delivery->attempt_count)),
             ]);
 
             return;
@@ -148,6 +194,16 @@ class WebhookDeliveryService
             'last_error' => $result->errorMessage,
             'delivered_at' => null,
             'next_attempt_at' => null,
+        ]);
+
+        logger()->warning('webhook.delivery.dead_lettered', [
+            'project_id' => $delivery->project_id,
+            'event_id' => $delivery->event_id,
+            'delivery_id' => $delivery->getKey(),
+            'endpoint_id' => $delivery->endpoint_id,
+            'attempt_number' => $attemptNumber,
+            'http_status' => $result->statusCode,
+            'error' => $result->errorMessage,
         ]);
     }
 }
