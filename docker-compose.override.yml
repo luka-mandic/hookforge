@@ -1,0 +1,38 @@
+# Local development overrides, merged automatically by `docker compose up`.
+# Code is bind-mounted, data services are published to the host, and RabbitMQ gets its management UI.
+
+services:
+  nginx:
+    volumes:
+      - .:/var/www/html:ro
+
+  php-fpm:
+    build:
+      target: development
+    image: hookforge-app:dev
+    volumes:
+      - .:/var/www/html
+
+  # The worker is long-running: `docker compose restart worker` after changing PHP code.
+  worker:
+    # php-fpm (root at start) fixes storage ownership; the worker then runs unprivileged like in production.
+    user: www-data
+    build:
+      target: development
+    image: hookforge-app:dev
+    volumes:
+      - .:/var/www/html
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"

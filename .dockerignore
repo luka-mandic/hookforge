@@ -13,3 +13,9 @@
 .DS_Store
 .idea
 .vscode
+/tests
+/.github
+/public/build
+/docker-compose*.yml
+/README.md
+/.phpunit.cache

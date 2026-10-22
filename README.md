@@ -29,7 +29,28 @@ Hookforge is a Laravel-based webhook delivery platform built for local developme
     curl http://localhost:8080/health
     ```
 
-## Services
+## Architecture
+
+```
+client -> nginx -> php-fpm (Laravel) -> PostgreSQL
+                       |                  ^
+                       v                  |
+                   RabbitMQ -> worker(s) --+--> customer endpoints
+                   Redis: cache and rate limiting
+```
+
+- `nginx` serves static assets and proxies PHP to `php-fpm`.
+- `php-fpm` runs the API and dashboard; it is the only service that runs migrations (`RUN_MIGRATIONS=true`).
+- `worker` runs `php artisan webhooks:work`, consumes `hookforge.delivery` with prefetch 1 and shuts down gracefully on SIGTERM.
+- `postgres`, `redis` and `rabbitmq` use named volumes (`postgres_data`, `redis_data`, `rabbitmq_data`); `storage_data` holds Laravel storage.
+- Every service has a health check and dependants wait with `service_healthy`.
+
+## Compose files
+
+- `docker-compose.yml` is the production-shaped stack: no bind mounts, no published database ports, secrets only from the env file.
+- `docker-compose.override.yml` is merged automatically for local development: bind-mounts the code, publishes service ports and enables the RabbitMQ management UI.
+
+## Local development services
 
 - Nginx: http://localhost:8080
 - PostgreSQL: localhost:5432
@@ -39,18 +60,29 @@ Hookforge is a Laravel-based webhook delivery platform built for local developme
 ## Common commands
 
 ```bash
-# View running containers
-docker compose ps
+# Start and scale workers
+docker compose up -d --build --scale worker=3
 
-# View logs
-docker compose logs -f php-fpm
+# View running containers and logs
+docker compose ps
+docker compose logs -f worker
 
 # Run Laravel commands inside the app container
-docker compose exec php-fpm php artisan --version
+docker compose exec php-fpm php artisan migrate
 
 # Stop the stack
 docker compose down
 ```
+
+## Production deployment
+
+```bash
+cp .env.production.example .env.production   # replace every CHANGE_ME value
+docker compose run --rm --no-deps php-fpm php artisan key:generate --show   # put it in APP_KEY
+ENV_FILE=.env.production docker compose --env-file .env.production -f docker-compose.yml up -d --build --scale worker=3
+```
+
+Never commit `.env` or `.env.production`. Migrations run when `php-fpm` starts; set `RUN_MIGRATIONS=false` to disable.
 
 ## Default credentials
 
