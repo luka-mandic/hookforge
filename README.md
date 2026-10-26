@@ -1,137 +1,245 @@
 # Hookforge
 
-Hookforge is a Laravel-based webhook delivery platform built for local development with Docker.
+Hookforge is a webhook delivery platform built with Laravel 13, PostgreSQL, RabbitMQ and Redis. Applications publish events to a project; Hookforge fans them out to subscribed HTTP endpoints, signs each request, retries failures with exponential backoff and records every attempt.
 
-## Requirements
+> **Status:** a portfolio and learning project. It is **not production-ready**; see [Known limitations](#known-limitations).
 
-- Docker
-- Docker Compose
+## Why this project exists
 
-## Quick start
-
-1. Copy the example environment file:
-
-    ```bash
-    cp .env.example .env
-    ```
-
-2. Start the application stack:
-
-    ```bash
-    docker compose up --build -d
-    ```
-
-3. The application will be available at http://localhost:8080.
-
-4. Health check endpoint:
-
-    ```bash
-    curl http://localhost:8080/health
-    ```
+Reliable webhook delivery is a classic backend problem: at-least-once delivery, retries, idempotency, signing, back-pressure and observability. Hookforge is a compact, fully tested implementation of those concerns, built to show how I design asynchronous systems: explicit boundaries, transactional publishing, swappable policies and strict static analysis.
 
 ## Architecture
 
 ```
-client -> nginx -> php-fpm (Laravel) -> PostgreSQL
-                       |                  ^
-                       v                  |
-                   RabbitMQ -> worker(s) --+--> customer endpoints
-                   Redis: cache and rate limiting
+                 +-----------+      +-------------------+
+ client/browser->|   nginx   |----->| php-fpm (Laravel) |---> PostgreSQL
+                 +-----------+      +---------+---------+        ^
+                                              | publish          |
+                                              v (after commit)   |
+                                   +----------------------+      |
+                                   | RabbitMQ             |      |
+                                   | hookforge.events     |      |
+                                   | (topic) -> queue     |      |
+                                   | hookforge.delivery   |      |
+                                   +----------+-----------+      |
+                                              | consume          |
+                                              v                  |
+                                   +----------------------+      |
+                                   | worker x N           |------+
+                                   | webhooks:work        |
+                                   +----------+-----------+
+                                              | signed HTTP POST
+                                              v
+                                      customer endpoints
+
+ Redis: cache and API rate limiting
 ```
 
-- `nginx` serves static assets and proxies PHP to `php-fpm`.
-- `php-fpm` runs the API and dashboard; it is the only service that runs migrations (`RUN_MIGRATIONS=true`).
-- `worker` runs `php artisan webhooks:work`, consumes `hookforge.delivery` with prefetch 1 and shuts down gracefully on SIGTERM.
-- `postgres`, `redis` and `rabbitmq` use named volumes (`postgres_data`, `redis_data`, `rabbitmq_data`); `storage_data` holds Laravel storage.
-- Every service has a health check and dependants wait with `service_healthy`.
+## Technology stack
 
-## Compose files
+- PHP 8.4, Laravel 13, Blade + Vite/Tailwind dashboard
+- PostgreSQL 16 (SQLite for fast unit/feature tests)
+- RabbitMQ (php-amqplib), Redis (phpredis)
+- Docker Compose, Nginx, PHP-FPM
+- Pest, PHPStan (level max, Larastan), Laravel Pint
 
-- `docker-compose.yml` is the production-shaped stack: no bind mounts, no published database ports, secrets only from the env file.
-- `docker-compose.override.yml` is merged automatically for local development: bind-mounts the code, publishes service ports and enables the RabbitMQ management UI.
+## Main features
 
-## Local development services
+Implemented:
 
-- Nginx: http://localhost:8080
-- PostgreSQL: localhost:5432
-- Redis: localhost:6379
-- RabbitMQ management: http://localhost:15672
+- Projects, webhook endpoints (per-endpoint secret, enable/disable) and event-type subscriptions
+- Event ingestion API with validation, idempotency keys and Redis-backed rate limiting
+- Transactional publishing: messages are sent to RabbitMQ only after the DB transaction commits
+- Scalable consumer workers (`docker compose up --scale worker=3`) with prefetch 1 and graceful shutdown
+- HMAC-SHA256 signed deliveries
+- Retry policy with exponential backoff and permanent/transient failure classification
+- Per-attempt history (status, HTTP code, response body, error)
+- Dashboards: project overview, filtered/paginated delivery list, delivery detail
+- Simulated test endpoints (2xx/4xx/5xx/timeout) for demonstrating retries
+- Structured logging with no secrets or payloads ([docs/logging-strategy.md](docs/logging-strategy.md))
+- Health checks for every container
 
-## Common commands
+## Event lifecycle
 
-```bash
-# Start and scale workers
-docker compose up -d --build --scale worker=3
-
-# View running containers and logs
-docker compose ps
-docker compose logs -f worker
-
-# Run Laravel commands inside the app container
-docker compose exec php-fpm php artisan migrate
-
-# Stop the stack
-docker compose down
-```
-
-## Production deployment
-
-```bash
-cp .env.production.example .env.production   # replace every CHANGE_ME value
-docker compose run --rm --no-deps php-fpm php artisan key:generate --show   # put it in APP_KEY
-ENV_FILE=.env.production docker compose --env-file .env.production -f docker-compose.yml up -d --build --scale worker=3
-```
-
-Never commit `.env` or `.env.production`. Migrations run when `php-fpm` starts; set `RUN_MIGRATIONS=false` to disable.
-
-## Default credentials
-
-- PostgreSQL database: hookforge
-- PostgreSQL user: hookforge
-- PostgreSQL password: hookforge
-- RabbitMQ user: guest
-- RabbitMQ password: guest
-
-## Logging strategy
-
-Structured application logging is used for the webhook lifecycle so operators can trace event publication, retries, delivery attempts, and dead-letter transitions without exposing secrets or payload data.
-
-See [docs/logging-strategy.md](docs/logging-strategy.md) for the full logging contract and examples.
+1. A client `POST`s an event to `/api/v1/projects/{project}/events`.
+2. The request is validated, rate limited and checked for idempotency.
+3. In one DB transaction the event and one `queued` delivery per matching active endpoint are stored.
+4. After commit, a message per delivery is published to `hookforge.events`.
+5. A worker consumes the message, loads the delivery, signs the payload and sends the HTTP request (10 s timeout).
+6. A `DeliveryAttempt` is recorded. On 2xx the delivery becomes `delivered`.
+7. On failure the retry policy decides: schedule another attempt (`next_attempt_at`), mark `failed` (permanent) or `dead_lettered` (attempts exhausted).
+8. The message is acked; consumers nack without requeue on unexpected errors.
 
 ## RabbitMQ topology
 
-Hookforge publishes webhook events to RabbitMQ using a topic exchange and explicit routing keys.
+- Exchange: `hookforge.events` (topic)
+- Queue: `hookforge.delivery`, bound with `hookforge.delivery.#`
+- Routing key: `hookforge.delivery.<event_type>`
+- Message: identifiers only (`project_id`, `event_id`, `delivery_id`, `event_type`); never secrets
+- Consumers use manual acks and `basic_qos(0, 1)` so work spreads evenly across workers
 
-- Exchange: `hookforge.events`
-- Default queue: `hookforge.delivery`
-- Routing key pattern: `hookforge.delivery.<event_type>`
+## Database model
 
-Example payload:
+```
+users 1--* projects 1--* webhook_endpoints
+                    1--* webhook_events (unique project_id + idempotency_key)
+webhook_endpoints *--* event types via webhook_subscriptions
+webhook_events    1--* webhook_deliveries *--1 webhook_endpoints
+webhook_deliveries 1--* delivery_attempts (unique delivery_id + attempt_number)
+```
 
-```json
-{
-    "project_id": "01J...",
-    "event_id": "01J...",
-    "event_type": "order.created",
-    "payload": {
-        "order_id": "ord_123",
-        "amount": 1299
-    }
+All primary keys are ULIDs.
+
+## Retry strategy
+
+Defined in `DefaultRetryPolicy` behind a `RetryPolicy` interface.
+
+- Max 5 attempts; delay = 1 s x 2^(attempt-1), capped at 30 s
+- Retried: network errors, timeouts, 429, 500, 502, 503, 504
+- Not retried: 400, 401, 403, 404, 405, 410, 422
+- Exhausted attempts end in `dead_lettered`
+
+## Idempotency strategy
+
+- Publishers may send an `idempotency_key`; a repeat for the same project returns the existing event instead of creating a new one.
+- Workers skip deliveries that are already `delivered`, so a duplicated broker message yields one HTTP request.
+- Delivery is **at-least-once**: receivers should dedupe using the `X-Hookforge-Delivery` header.
+
+## Security considerations
+
+- Every delivery carries `X-Hookforge-Signature: sha256=<hmac of the raw body>` using the endpoint secret.
+- The signed raw body is exactly what is sent, so verification is byte-exact.
+- Project and endpoint access is enforced by policies (users only see their own data).
+- Secrets and payloads are never logged; queue messages contain no secrets.
+- Compose reads secrets from an env file; `.env*` files are gitignored and only `CHANGE_ME` templates are committed.
+- Event publishing is rate limited per user and project (HTTP 429 with `Retry-After`).
+
+## Testing strategy
+
+- Unit tests: signer, retry policy, request builder, filters
+- Feature tests: dashboards, endpoint CRUD, event API, delivery flow, rate limiting, simulator
+- Integration tests (`tests/Integration`): real Redis, RabbitMQ and PostgreSQL; each skips if its service is unreachable
+- 177 tests, run on the host and inside the container
+
+## Docker setup
+
+- `docker-compose.yml`: production-shaped stack (nginx, php-fpm, worker, postgres, redis, rabbitmq), named volumes, health checks, `depends_on: service_healthy`, no bind mounts
+- `docker-compose.override.yml`: merged automatically for local development (bind mounts, published ports, RabbitMQ management UI)
+- `docker/Dockerfile`: multi-stage with `development`, `production` and `nginx` targets
+- Only `php-fpm` runs migrations (`RUN_MIGRATIONS=true`)
+
+## Running the application
+
+```bash
+cp .env.example .env
+docker compose up -d --build --scale worker=3
+docker compose exec php-fpm php artisan key:generate   # if APP_KEY is empty
+```
+
+- App: http://localhost:8080 (health: `/up`, `/health`)
+- RabbitMQ UI: http://localhost:15672 (guest/guest in local development)
+- PostgreSQL: localhost:5432 (hookforge/hookforge)
+
+Useful commands:
+
+```bash
+docker compose ps
+docker compose logs -f worker
+docker compose down
+```
+
+For a production-style run:
+
+```bash
+cp .env.production.example .env.production   # replace every CHANGE_ME
+ENV_FILE=.env.production docker compose --env-file .env.production -f docker-compose.yml up -d --build --scale worker=3
+```
+
+## Running tests
+
+```bash
+./vendor/bin/pest                          # unit + feature
+./vendor/bin/pest --testsuite=Integration  # needs Redis, RabbitMQ, PostgreSQL
+```
+
+Inside the containers (the container `.env` overrides phpunit, so set the environment explicitly):
+
+```bash
+docker compose exec -T -e APP_ENV=testing \
+  -e INTEGRATION_REDIS_HOST=redis -e INTEGRATION_RABBITMQ_HOST=rabbitmq \
+  -e INTEGRATION_PG_HOST=postgres -e INTEGRATION_PG_DATABASE=hookforge_test \
+  -e INTEGRATION_PG_USERNAME=hookforge -e INTEGRATION_PG_PASSWORD=hookforge \
+  php-fpm ./vendor/bin/pest
+```
+
+The PostgreSQL integration test runs `migrate:fresh`, so its database name must end in `_test`. Other overrides: `INTEGRATION_*_PORT`, `INTEGRATION_RABBITMQ_USER`/`PASSWORD`, `INTEGRATION_PG_PORT`.
+
+## Static analysis
+
+```bash
+./vendor/bin/phpstan analyse --memory-limit=1G   # level max
+./vendor/bin/pint --test                         # code style
+```
+
+## Example API requests
+
+The API uses the application's session authentication (log in through the web UI first); there are no API tokens yet. Rate limit settings: `RATE_LIMIT_EVENTS_PER_MINUTE` (default 60), `RATE_LIMIT_EVENTS_DECAY_SECONDS`, `CACHE_LIMITER_STORE`.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/projects/$PROJECT_ID/events \
+  -H "Content-Type: application/json" -H "Accept: application/json" \
+  -H "X-XSRF-TOKEN: $XSRF" -b cookies.txt \
+  -d '{
+        "type": "order.created",
+        "data": {"order_id": "ord_123", "amount": 1299},
+        "idempotency_key": "order-123-created"
+      }'
+```
+
+A throttled request returns `429` with `Retry-After`, `X-RateLimit-Limit` and `X-RateLimit-Remaining`.
+
+## Example webhook signature verification
+
+Each delivery includes `X-Hookforge-Event`, `X-Hookforge-Delivery` and `X-Hookforge-Signature`. Verify against the **raw** request body:
+
+```php
+$raw = file_get_contents('php://input');
+$expected = 'sha256='.hash_hmac('sha256', $raw, $endpointSecret);
+
+if (! hash_equals($expected, $_SERVER['HTTP_X_HOOKFORGE_SIGNATURE'] ?? '')) {
+    http_response_code(401);
+    exit;
 }
 ```
 
-The AMQP configuration is driven by environment variables in `.env`, and publishing is deferred until the related database transaction is committed.
+```python
+import hmac, hashlib
 
-## API rate limiting
+def verify(raw: bytes, header: str, secret: str) -> bool:
+    expected = "sha256=" + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header)
+```
 
-Event publishing (`POST /api/v1/projects/{project}/events`) is rate limited per authenticated user and project using Redis. Exceeding the limit returns HTTP 429 with `Retry-After`, `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers.
+## Known limitations
 
-Configure via `RATE_LIMIT_EVENTS_PER_MINUTE` (default 60), `RATE_LIMIT_EVENTS_DECAY_SECONDS` (default 60) and `CACHE_LIMITER_STORE` (default `redis`).
+- Not production-ready; no load testing or security audit
+- API authentication is session-based only; no API keys or tokens
+- Retries are recorded (`queued` + `next_attempt_at`) but nothing republishes them to RabbitMQ yet, so scheduled retries need a scheduler or delayed-message mechanism
+- Idempotency is check-then-insert; concurrent duplicates fall back to the database unique constraint
+- Delivery URLs are not restricted, so there is no SSRF protection against internal addresses
+- No signature timestamp, so replay protection is left to receivers
+- Single queue, no dead-letter exchange; `dead_lettered` is a database status only
+- Default local credentials (`guest`, `hookforge`) are for development only
 
-## Testing
+## Possible future improvements
 
-Run the unit and feature suites with `./vendor/bin/pest`.
+Not implemented:
 
-Integration tests live in `tests/Integration` and run against real Redis, RabbitMQ and PostgreSQL. Each test skips itself when its service is unreachable. Run them with `./vendor/bin/pest --testsuite=Integration`.
-
-Connection settings can be overridden with `INTEGRATION_REDIS_HOST`/`PORT`, `INTEGRATION_RABBITMQ_HOST`/`PORT`/`USER`/`PASSWORD` and `INTEGRATION_PG_HOST`/`PORT`/`DATABASE`/`USERNAME`/`PASSWORD`. The PostgreSQL test runs `migrate:fresh`, so the database name must end in `_test`. The Redis test needs the phpredis extension or predis.
+- Republish scheduled retries via delayed exchange or scheduler
+- API tokens with scopes
+- SSRF protection (block private ranges, DNS pinning)
+- Timestamped signatures for replay protection
+- RabbitMQ dead-letter exchange and manual replay of dead-lettered deliveries
+- Per-endpoint rate limiting and circuit breaking
+- Metrics (Prometheus) and tracing
+- CI pipeline running tests, PHPStan and Pint
