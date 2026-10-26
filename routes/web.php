@@ -54,7 +54,7 @@ Route::middleware('auth')->group(function () {
         ->name('projects.test-endpoints.handle');
 
     Route::resource('projects.endpoints', WebhookEndpointController::class)
-        ->except(['index', 'show'])
+        ->only(['store', 'update', 'destroy'])
         ->shallow();
 
     Route::prefix('api/v1')->group(function () {
